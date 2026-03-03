@@ -21,13 +21,14 @@ No `setup()` call needed. Commands are registered globally on load.
 
 ## Commands
 
-| Command      | Description                               |
-| ------------ | ----------------------------------------- |
-| `:Dirsv`     | Start dirsv and open the file in a browser |
-| `:DirsvStop` | Stop the running dirsv server             |
+| Command            | Description                               |
+| ------------------ | ----------------------------------------- |
+| `:Dirsv [path]`    | Start dirsv and open a file or directory   |
+| `:DirsvStop`       | Stop the running dirsv server             |
 
-Calling `:Dirsv` while the server is already running opens the current file
-without restarting.
+`:Dirsv` accepts an optional file or directory path (with tab completion). When
+omitted, it uses the current buffer. Calling `:Dirsv` while the server is
+already running opens the target without restarting.
 
 ## Development
 

@@ -79,16 +79,27 @@ local function file_url(file)
   return string.format("http://localhost:%d/%s", state.port, rel)
 end
 
-function M.start()
-  local file = vim.api.nvim_buf_get_name(0)
+--- Resolve the target path from an optional argument or the current buffer.
+---@param arg string|nil optional file/dir path from :Dirsv <arg>
+---@return string absolute path (may be empty if no arg and no buffer name)
+local function resolve_target(arg)
+  if arg and arg ~= "" then
+    return vim.fn.fnamemodify(arg, ":p")
+  end
+  return vim.api.nvim_buf_get_name(0)
+end
+
+---@param arg string|nil optional file/dir path
+function M.start(arg)
+  local target = resolve_target(arg)
 
   -- Already running — just open the browser.
   if state and state.job_id then
-    open_browser(file_url(file))
+    open_browser(file_url(target))
     return
   end
 
-  local root = file ~= "" and find_root(file) or vim.fn.getcwd()
+  local root = target ~= "" and find_root(target) or vim.fn.getcwd()
   local port = find_free_port(8080)
 
   local stderr_chunks = {}
@@ -143,7 +154,7 @@ function M.start()
   -- Give dirsv a moment to bind the port, then open browser.
   vim.defer_fn(function()
     if state then
-      open_browser(file_url(file))
+      open_browser(file_url(target))
     end
   end, 300)
 end
@@ -176,6 +187,7 @@ M._test = {
   find_root = find_root,
   find_free_port = find_free_port,
   file_url = file_url,
+  resolve_target = resolve_target,
   get_state = function() return state end,
   set_state = function(s) state = s end,
 }
