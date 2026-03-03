@@ -14,17 +14,23 @@ finds a free port starting from 8080.
 With [lazy.nvim][lazy]:
 
 ```lua
-{ 'taishib/dirsv.nvim' }
+{ 'letientai299/dirsv.nvim' }
+```
+
+With [vim-plug][plug]:
+
+```vim
+Plug 'letientai299/dirsv.nvim'
 ```
 
 No `setup()` call needed. Commands are registered globally on load.
 
 ## Commands
 
-| Command            | Description                               |
-| ------------------ | ----------------------------------------- |
-| `:Dirsv [path]`    | Start dirsv and open a file or directory   |
-| `:DirsvStop`       | Stop the running dirsv server             |
+| Command         | Description                              |
+| --------------- | ---------------------------------------- |
+| `:Dirsv [path]` | Start dirsv and open a file or directory |
+| `:DirsvStop`    | Stop the running dirsv server            |
 
 `:Dirsv` accepts an optional file or directory path (with tab completion). When
 omitted, it uses the current buffer. Calling `:Dirsv` while the server is
@@ -38,5 +44,6 @@ mise setup     # install nlua + busted
 mise test      # run tests
 ```
 
-[dirsv]: https://github.com/taishib/dirsv
+[dirsv]: https://github.com/letientai299/dirsv
 [lazy]: https://github.com/folke/lazy.nvim
+[plug]: https://github.com/junegunn/vim-plug
