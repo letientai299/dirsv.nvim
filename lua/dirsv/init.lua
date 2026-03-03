@@ -59,18 +59,21 @@ local function open_browser(url)
   end
 end
 
---- Build the URL for the current markdown file.
---- Returns nil if the file is outside the served root.
----@param file string absolute path of the file
----@return string|nil
+--- Build the URL for a file or directory.
+--- Falls back to root URL when file is empty or outside the served root.
+---@param file string absolute path of the file (may be empty)
+---@return string
 local function file_url(file)
+  if file == "" then
+    return string.format("http://localhost:%d/", state.port)
+  end
   local root = state.root
   -- Ensure root ends with / for prefix matching.
   if root:sub(-1) ~= "/" then
     root = root .. "/"
   end
   if not vim.startswith(file, root) then
-    return nil
+    return string.format("http://localhost:%d/", state.port)
   end
   local rel = file:sub(#root + 1)
   return string.format("http://localhost:%d/%s", state.port, rel)
@@ -78,23 +81,14 @@ end
 
 function M.start()
   local file = vim.api.nvim_buf_get_name(0)
-  if file == "" then
-    vim.notify("dirsv: buffer has no file", vim.log.levels.WARN)
-    return
-  end
 
   -- Already running — just open the browser.
   if state and state.job_id then
-    local url = file_url(file)
-    if not url then
-      vim.notify("dirsv: file is outside the served root (" .. state.root .. ")", vim.log.levels.WARN)
-      return
-    end
-    open_browser(url)
+    open_browser(file_url(file))
     return
   end
 
-  local root = find_root(file)
+  local root = file ~= "" and find_root(file) or vim.fn.getcwd()
   local port = find_free_port(8080)
 
   local stderr_chunks = {}
@@ -149,10 +143,7 @@ function M.start()
   -- Give dirsv a moment to bind the port, then open browser.
   vim.defer_fn(function()
     if state then
-      local url = file_url(file)
-      if url then
-        open_browser(url)
-      end
+      open_browser(file_url(file))
     end
   end, 300)
 end

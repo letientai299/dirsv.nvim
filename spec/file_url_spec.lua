@@ -12,9 +12,14 @@ describe('file_url', function()
     assert.are.equal('http://localhost:8080/readme.md', file_url('/project/readme.md'))
   end)
 
-  it('returns nil for file outside root', function()
+  it('falls back to root URL for file outside root', function()
     set_state({ root = '/project', port = 8080 })
-    assert.is_nil(file_url('/other/readme.md'))
+    assert.are.equal('http://localhost:8080/', file_url('/other/readme.md'))
+  end)
+
+  it('falls back to root URL for empty file path', function()
+    set_state({ root = '/project', port = 8080 })
+    assert.are.equal('http://localhost:8080/', file_url(''))
   end)
 
   it('handles nested paths', function()
