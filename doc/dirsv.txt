@@ -1,0 +1,67 @@
+*dirsv.txt*  Preview files in the browser via dirsv
+
+Author:  taishib
+License: MIT
+
+==============================================================================
+INTRODUCTION                                                    *dirsv.nvim*
+
+dirsv.nvim previews files and directories in the browser using the `dirsv`
+file server. It auto-detects the git root as the serve directory and finds a
+free port starting from 8080.
+
+Requirements:
+- Neovim >= 0.10
+- `dirsv` in $PATH (https://github.com/taishib/dirsv)
+
+No setup() call is needed. Commands are registered globally on load.
+
+==============================================================================
+COMMANDS                                                   *dirsv-commands*
+
+                                                                    *:Dirsv*
+:Dirsv [path]           Start the dirsv server and open [path] in the
+                        browser. [path] can be a file or directory and
+                        supports tab completion. When omitted, uses the
+                        current buffer. When the buffer has no name, opens
+                        the project root.
+
+                        If the server is already running, opens the target
+                        in the browser without restarting.
+
+                        The serve root is determined by walking up from the
+                        target path to find `.git`. Falls back to the
+                        current working directory when no git root is found.
+
+                                                                *:DirsvStop*
+:DirsvStop              Stop the running dirsv server.
+
+==============================================================================
+LUA API                                                        *dirsv-api*
+
+                                                          *dirsv.start()*
+dirsv.start([{path}])  Start the server. Optional {path} is a file or
+                        directory string. Same behavior as |:Dirsv|.
+
+                                                           *dirsv.stop()*
+dirsv.stop()            Stop the server. Same behavior as |:DirsvStop|.
+
+==============================================================================
+BEHAVIOR                                                  *dirsv-behavior*
+
+Port selection ~
+
+The plugin tries ports 8080 through 8179. Each candidate is tested by
+binding and listening on 127.0.0.1 to confirm availability. The first
+free port is used.
+
+Browser ~
+
+The file URL is opened with the system browser: `open` on macOS,
+`xdg-open` on Linux, `cmd /c start` on Windows.
+
+Cleanup ~
+
+The server is automatically stopped on |VimLeavePre|.
+
+ vim:tw=78:ts=8:ft=help:norl:
