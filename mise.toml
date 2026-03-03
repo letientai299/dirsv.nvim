@@ -1,0 +1,10 @@
+[tools]
+"asdf:mise-plugins/mise-lua" = "5.1.5"
+
+[tasks.setup]
+description = "Install test dependencies"
+run = "luarocks install nlua --local && luarocks install busted --local"
+
+[tasks.test]
+description = "Run tests"
+run = "eval $(luarocks path) && busted"
