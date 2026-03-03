@@ -80,10 +80,17 @@ local function file_url(file)
 end
 
 --- Resolve the target path from an optional argument or the current buffer.
+--- When `base` is given, relative `arg` paths resolve against it instead of
+--- Neovim's CWD (which may have drifted via `:cd`).
 ---@param arg string|nil optional file/dir path from :Dirsv <arg>
+---@param base string|nil directory to resolve relative args against
 ---@return string absolute path (may be empty if no arg and no buffer name)
-local function resolve_target(arg)
+local function resolve_target(arg, base)
   if arg and arg ~= "" then
+    if base and vim.fn.fnamemodify(arg, ":p") ~= arg then
+      -- arg is relative — resolve against base, not CWD.
+      return vim.fn.fnamemodify(base .. "/" .. arg, ":p")
+    end
     return vim.fn.fnamemodify(arg, ":p")
   end
   return vim.api.nvim_buf_get_name(0)
@@ -91,16 +98,16 @@ end
 
 ---@param arg string|nil optional file/dir path
 function M.start(arg)
-  local target = resolve_target(arg)
-
-  -- Already running — just open the browser.
+  -- Already running — resolve against the serve root, not CWD.
   if state and state.job_id then
+    local target = resolve_target(arg, state.root)
     local url = file_url(target)
     open_browser(url)
     vim.notify(LOG_PREFIX .. "opened: " .. url, vim.log.levels.INFO)
     return
   end
 
+  local target = resolve_target(arg)
   local root = target ~= "" and find_root(target) or vim.fn.getcwd()
   local port = find_free_port(8080)
 

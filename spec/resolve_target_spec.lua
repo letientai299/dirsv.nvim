@@ -37,4 +37,23 @@ describe('resolve_target', function()
     assert.are.equal('', resolve_target(nil))
     vim.api.nvim_buf_delete(buf, { force = true })
   end)
+
+  it('resolves relative arg against base when base is given', function()
+    local result = resolve_target('foo.md', '/srv/project')
+    assert.are.equal('/srv/project/foo.md', result)
+  end)
+
+  it('ignores base for absolute arg', function()
+    local result = resolve_target('/tmp/abs.md', '/srv/project')
+    assert.are.equal('/tmp/abs.md', result)
+  end)
+
+  it('ignores base when arg is nil', function()
+    local name = vim.fn.tempname() .. '.md'
+    local buf = vim.api.nvim_create_buf(false, true)
+    vim.api.nvim_set_current_buf(buf)
+    vim.api.nvim_buf_set_name(buf, name)
+    assert.are.equal(vim.api.nvim_buf_get_name(buf), resolve_target(nil, '/srv/project'))
+    vim.api.nvim_buf_delete(buf, { force = true })
+  end)
 end)
