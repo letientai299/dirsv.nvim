@@ -95,7 +95,9 @@ function M.start(arg)
 
   -- Already running — just open the browser.
   if state and state.job_id then
-    open_browser(file_url(target))
+    local url = file_url(target)
+    open_browser(url)
+    vim.notify(LOG_PREFIX .. "opened: " .. url, vim.log.levels.INFO)
     return
   end
 
@@ -154,7 +156,9 @@ function M.start(arg)
   -- Give dirsv a moment to bind the port, then open browser.
   vim.defer_fn(function()
     if state then
-      open_browser(file_url(target))
+      local url = file_url(target)
+      open_browser(url)
+      vim.notify(LOG_PREFIX .. "opened: " .. url, vim.log.levels.INFO)
     end
   end, 300)
 end
