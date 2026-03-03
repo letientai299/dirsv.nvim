@@ -1,8 +1,8 @@
 # dirsv.nvim
 
-Neovim plugin for previewing markdown files in the browser using [dirsv][dirsv].
-Opens the current file's URL, auto-detects the git root as the serve directory,
-and finds a free port starting from 8080.
+Neovim plugin for previewing files in the browser using [dirsv][dirsv]. Opens
+the current file's URL, auto-detects the git root as the serve directory, and
+finds a free port starting from 8080.
 
 ## Requirements
 
@@ -17,18 +17,17 @@ With [lazy.nvim][lazy]:
 { 'taishib/dirsv.nvim' }
 ```
 
-No `setup()` call needed. The plugin registers buffer-local commands on
-`FileType markdown` automatically.
+No `setup()` call needed. Commands are registered globally on load.
 
 ## Commands
 
-| Command              | Description                               |
-| -------------------- | ----------------------------------------- |
-| `:MarkdownPreview`     | Start dirsv and open the file in a browser |
-| `:MarkdownPreviewStop` | Stop the running dirsv server             |
+| Command      | Description                               |
+| ------------ | ----------------------------------------- |
+| `:Dirsv`     | Start dirsv and open the file in a browser |
+| `:DirsvStop` | Stop the running dirsv server             |
 
-Calling `:MarkdownPreview` while the server is already running opens the current
-file without restarting.
+Calling `:Dirsv` while the server is already running opens the current file
+without restarting.
 
 ## Development
 
