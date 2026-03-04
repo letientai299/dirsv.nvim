@@ -2,7 +2,7 @@ local M = {}
 
 ---@class dirsv.State
 ---@field pid integer|nil
----@field port integer
+---@field base_url string
 ---@field root string
 ---@field job_id integer|nil
 ---@field stderr string[]
@@ -21,26 +21,12 @@ local function find_root(path)
   return root or vim.fn.getcwd()
 end
 
---- Find a free port starting from `base`.
---- Binds + listens to confirm the port is truly available, then closes.
----@param base integer
----@return integer
-local function find_free_port(base)
-  for port = base, base + 99 do
-    local server = vim.uv.new_tcp()
-    if server then
-      local ret = server:bind("127.0.0.1", port)
-      if ret == 0 then
-        -- bind alone isn't enough — listen confirms no TIME_WAIT conflict.
-        ret = server:listen(1, function() end)
-      end
-      server:close()
-      if ret == 0 then
-        return port
-      end
-    end
-  end
-  return base
+--- Extract the base URL from dirsv's startup line.
+--- dirsv prints "serving <path> on http://<host>:<port>" to stdout.
+---@param line string
+---@return string|nil base URL (e.g. "http://127.0.0.1:8084")
+local function parse_serve_url(line)
+  return line:match("(https?://[%w%.%-]+:%d+)")
 end
 
 --- Open a URL in the system browser.
@@ -64,8 +50,9 @@ end
 ---@param file string absolute path of the file (may be empty)
 ---@return string
 local function file_url(file)
+  local base = state.base_url
   if file == "" then
-    return string.format("http://localhost:%d/", state.port)
+    return base .. "/"
   end
   local root = state.root
   -- Ensure root ends with / for prefix matching.
@@ -73,10 +60,10 @@ local function file_url(file)
     root = root .. "/"
   end
   if not vim.startswith(file, root) then
-    return string.format("http://localhost:%d/", state.port)
+    return base .. "/"
   end
   local rel = file:sub(#root + 1)
-  return string.format("http://localhost:%d/%s", state.port, rel)
+  return base .. "/" .. rel
 end
 
 --- Resolve the target path from an optional argument or the current buffer.
@@ -109,16 +96,37 @@ function M.start(arg)
 
   local target = resolve_target(arg)
   local root = target ~= "" and find_root(target) or vim.fn.getcwd()
-  local port = find_free_port(8080)
 
   local stderr_chunks = {}
+  local opened = false
 
-  local cmd = { "dirsv", root, "--no-open", "-p", tostring(port) }
+  local cmd = { "dirsv", root, "--no-open" }
   vim.notify(LOG_PREFIX .. "starting: " .. table.concat(cmd, " "), vim.log.levels.DEBUG)
 
   local job_id = vim.fn.jobstart(cmd, {
     detach = false,
+    stdout_buffered = false,
     stderr_buffered = false,
+    on_stdout = function(_, data)
+      if opened or not data then
+        return
+      end
+      for _, line in ipairs(data) do
+        local base_url = parse_serve_url(line)
+        if base_url and state then
+          opened = true
+          state.base_url = base_url
+          vim.schedule(function()
+            if state then
+              local url = file_url(target)
+              open_browser(url)
+              vim.notify(LOG_PREFIX .. "opened: " .. url, vim.log.levels.INFO)
+            end
+          end)
+          return
+        end
+      end
+    end,
     on_stderr = function(_, data)
       if data then
         for _, line in ipairs(data) do
@@ -154,20 +162,11 @@ function M.start(arg)
 
   state = {
     pid = pid,
-    port = port,
+    base_url = "",
     root = root,
     job_id = job_id,
     stderr = stderr_chunks,
   }
-
-  -- Give dirsv a moment to bind the port, then open browser.
-  vim.defer_fn(function()
-    if state then
-      local url = file_url(target)
-      open_browser(url)
-      vim.notify(LOG_PREFIX .. "opened: " .. url, vim.log.levels.INFO)
-    end
-  end, 300)
 end
 
 function M.stop()
@@ -196,7 +195,7 @@ setup_cleanup()
 
 M._test = {
   find_root = find_root,
-  find_free_port = find_free_port,
+  parse_serve_url = parse_serve_url,
   file_url = file_url,
   resolve_target = resolve_target,
   get_state = function() return state end,
