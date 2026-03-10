@@ -1,18 +1,39 @@
 *dirsv.txt*	Preview files in the browser via dirsv
 
-Author:  taishib
+Author:  letientai299
 License: MIT
 
 ==============================================================================
 INTRODUCTION                                                      *dirsv.nvim*
 
 dirsv.nvim previews files and directories in the browser using the
-dirsv file server. It auto-detects the git root as the serve directory
-and finds a free port starting from 8080.
+dirsv file server. It operates in two modes:
+
+  Root mode ~                                              *dirsv-root-mode*
+    The target path is under the session root. A single global
+    server serves the root directory. All buffers within the root
+    share this server.
+
+  Single-file mode ~                                    *dirsv-single-file*
+    The target path is outside the session root (temp files,
+    scratch buffers). The plugin passes the file path directly
+    to `dirsv`. Each buffer gets its own server, cleaned up
+    automatically when the buffer is deleted.
+
+Root resolution ~                                           *dirsv-root*
+    The root is determined once at plugin load:
+      1. Capture Neovim's starting directory (before any `:cd`).
+      2. Run `git rev-parse --show-toplevel` from that directory.
+      3. If found, root = git toplevel. Otherwise, root = the
+         starting directory.
+
+    The root never changes during the session. `:cd`, `:lcd`,
+    and `:tcd` do not affect it.
 
 Requirements:
   - Neovim >= 0.10
   - dirsv in $PATH
+  - git in $PATH (optional — without it, root = starting dir)
 
 No `setup()` call needed. Commands register globally on load.
 
@@ -23,18 +44,29 @@ COMMANDS                                                      *dirsv-commands*
 :Dirsv [path]
     Start the dirsv server and open {path} in the browser.
     {path} can be a file or directory (tab-completed). When
-    omitted, uses the current buffer. When the buffer has no
-    name, opens the project root.
+    omitted, uses the current buffer's file. Unnamed buffers
+    (no file) produce a warning.
 
-    Calling |:Dirsv| while the server is running opens the
-    target without restarting.
+    When {path} is given and doesn't exist on disk, a warning
+    is shown and no server is started.
 
-    The serve root is the nearest ancestor containing `.git`,
-    or the current working directory if none is found.
+    Mode is selected based on whether the resolved path is
+    under the session root:
+      - Under root → |dirsv-root-mode|
+      - Outside root → |dirsv-single-file|
+
+    When the target file has no open buffer (e.g.,
+    `:Dirsv /tmp/notes.md`), the plugin creates a hidden
+    buffer via `:badd` and ties the server to it.
+
+    Calling |:Dirsv| while a server is already running for
+    the target opens the browser without restarting.
 
                                                                   *:DirsvStop*
 :DirsvStop
-    Stop the running dirsv server.
+    Stop all running dirsv servers — global (root mode) and
+    every buffer-local (single-file) server. Notifies
+    "not running" if nothing is active.
 
 ==============================================================================
 LUA API                                                            *dirsv-api*
@@ -44,20 +76,21 @@ dirsv.start([{path}])                                          *dirsv.start()*
     Same behavior as |:Dirsv|.
 
 dirsv.stop()                                                    *dirsv.stop()*
-    Stop the server. Same behavior as |:DirsvStop|.
+    Stop all servers. Same behavior as |:DirsvStop|.
 
 ==============================================================================
 BEHAVIOR                                                      *dirsv-behavior*
 
 Port selection ~
-    Tries ports 8080 through 8179. Each candidate is tested by
-    binding and listening on 127.0.0.1. The first free port wins.
+    The dirsv binary auto-finds a free port starting from 8080.
 
 Browser ~
     Opens the URL with the system browser: `open` on macOS,
     `xdg-open` on Linux, `cmd /c start` on Windows.
 
 Cleanup ~
-    The server is automatically stopped on |VimLeavePre|.
+    Global server: stopped on |VimLeavePre|.
+    Single-file servers: stopped on |BufDelete| for the
+    associated buffer, and also on |VimLeavePre|.
 
  vim:tw=78:ts=8:ft=help:norl:

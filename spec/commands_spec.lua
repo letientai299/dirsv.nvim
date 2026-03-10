@@ -34,20 +34,22 @@ describe('commands', function()
     assert.are.equal(2, exists)
   end)
 
-  it(':Dirsv does not bail on no-name buffer', function()
+  it(':Dirsv warns on unnamed buffer', function()
     nvim_cmd('enew')
-    -- Collect notifications to check no "buffer has no file" warning.
     nvim_cmd([[
       lua _G._dirsv_notifs = {}
       vim.notify = function(msg, level)
         table.insert(_G._dirsv_notifs, { msg = msg, level = level })
       end
     ]])
-    -- Will fail to spawn dirsv (not in PATH), but should not early-return.
     pcall(nvim_cmd, 'Dirsv')
     local notifs = vim.rpcrequest(child, 'nvim_exec_lua', 'return _G._dirsv_notifs', {})
+    local found = false
     for _, n in ipairs(notifs) do
-      assert.is_not.match('buffer has no file', n.msg)
+      if n.msg:match('no file to preview') then
+        found = true
+      end
     end
+    assert.is_true(found, 'expected "no file to preview" warning')
   end)
 end)
