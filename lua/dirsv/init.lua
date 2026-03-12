@@ -1,4 +1,6 @@
 local M = {}
+local sync = require("dirsv.sync")
+local log = require("dirsv.log")
 
 ---@class dirsv.State
 ---@field pid integer|nil
@@ -119,6 +121,9 @@ local function spawn_server(cmd, on_url, on_exit_clean)
   local stderr_chunks = {}
   local url_parsed = false
 
+  log.enable()
+  log.append("SPAWN", table.concat(cmd, " "))
+
   local job_id = vim.fn.jobstart(cmd, {
     detach = false,
     stdout_buffered = false,
@@ -131,6 +136,7 @@ local function spawn_server(cmd, on_url, on_exit_clean)
         local base_url = parse_serve_url(line)
         if base_url then
           url_parsed = true
+          log.append("URL", base_url)
           vim.schedule(function()
             on_url(base_url)
           end)
@@ -143,11 +149,13 @@ local function spawn_server(cmd, on_url, on_exit_clean)
         for _, line in ipairs(data) do
           if line ~= "" then
             table.insert(stderr_chunks, line)
+            log.append("STDERR", line)
           end
         end
       end
     end,
     on_exit = function(id, code)
+      log.append("EXIT", "code=" .. code)
       vim.schedule(function()
         on_exit_clean()
         if code ~= 0 and code ~= 143 then
@@ -162,6 +170,7 @@ local function spawn_server(cmd, on_url, on_exit_clean)
   })
 
   if job_id <= 0 then
+    log.append("ERR", "failed to start: " .. table.concat(cmd, " "))
     vim.notify(LOG_PREFIX .. "failed to start (is dirsv in PATH?)", vim.log.levels.ERROR)
     return nil
   end
@@ -202,12 +211,14 @@ local function start_root_mode(target)
       return
     end
     state.base_url = base_url
+    sync.start(base_url, root)
     local url = file_url(captured_target, state)
     open_browser(url)
     vim.notify(LOG_PREFIX .. url, vim.log.levels.INFO)
   end, function()
     -- on_exit: clear global state only if it's still ours.
     if state and state.job_id and srv and state.job_id == srv.job_id then
+      sync.stop()
       state = nil
     end
   end)
@@ -220,6 +231,8 @@ local function start_root_mode(target)
 end
 
 --- Start or reuse a single-file buffer server, then open a URL.
+--- Note: sync is not wired here — the sync module is a singleton and
+--- single-file servers are per-buffer, so they'd fight over the connection.
 ---@param target string absolute file path
 local function start_single_file_mode(target)
   local bufnr = vim.fn.bufnr(target)
@@ -308,6 +321,7 @@ function M.stop()
   local had_any = false
 
   if state and state.job_id then
+    sync.stop()
     stop_server(state)
     state = nil
     had_any = true
@@ -319,28 +333,21 @@ function M.stop()
     had_any = true
   end
 
+  log.disable()
+
   if not had_any then
     vim.notify(LOG_PREFIX .. "not running", vim.log.levels.INFO)
   end
 end
 
-local function setup_cleanup()
-  vim.api.nvim_create_autocmd("VimLeavePre", {
-    group = vim.api.nvim_create_augroup("dirsv_cleanup", { clear = true }),
-    callback = function()
-      if state and state.job_id then
-        vim.fn.jobstop(state.job_id)
-        state = nil
-      end
-      for bufnr, srv in pairs(buf_servers) do
-        stop_server(srv)
-        buf_servers[bufnr] = nil
-      end
-    end,
-  })
+function M.open_log()
+  log.open()
 end
 
-setup_cleanup()
+vim.api.nvim_create_autocmd("VimLeavePre", {
+  group = vim.api.nvim_create_augroup("dirsv_cleanup", { clear = true }),
+  callback = M.stop,
+})
 
 M._test = {
   git_toplevel = git_toplevel,

@@ -10,3 +10,7 @@ end, { nargs = "?", complete = "file", desc = "Start dirsv and open file preview
 vim.api.nvim_create_user_command("DirsvStop", function()
   require("dirsv").stop()
 end, { desc = "Stop the dirsv preview server" })
+
+vim.api.nvim_create_user_command("DirsvLog", function()
+  require("dirsv").open_log()
+end, { desc = "Open dirsv communication log" })
