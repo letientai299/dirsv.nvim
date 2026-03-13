@@ -228,11 +228,20 @@ local function stop_server(srv)
   end
 end
 
+--- Send a close event for the URL about to be opened.
+---@param srv dirsv.State server state
+---@param file string absolute file path
+local function close_existing_tabs(srv, file)
+  local host, port = parse_host_port(srv.base_url)
+  sync.send_close(host, port, srv.root, file)
+end
+
 --- Start or reuse the global root-mode server, then open a URL.
 ---@param target string absolute path to open
 local function start_root_mode(target)
   if state and state.job_id then
     local url = file_url(target, state)
+    close_existing_tabs(state, target)
     open_browser(url)
     vim.notify(LOG_PREFIX .. url, vim.log.levels.INFO)
     return
@@ -276,6 +285,7 @@ local function start_single_file_mode(target)
   local existing = buf_servers[bufnr]
   if existing and existing.job_id then
     local url = existing.base_url .. "/" .. vim.fn.fnamemodify(target, ":t")
+    close_existing_tabs(existing, target)
     open_browser(url)
     vim.notify(LOG_PREFIX .. url, vim.log.levels.INFO)
     return

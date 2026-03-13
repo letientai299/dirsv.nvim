@@ -13,7 +13,7 @@ local ws = require("dirsv.ws")
 ---@class dirsv.ConnState
 ---@field handle dirsv.WSHandle|nil
 ---@field connecting boolean
----@field pending string|nil buffered payload to send after connect
+---@field pending string[] buffered payloads to send after connect
 ---@field last_connect_fail integer|nil uv.now() timestamp of last failed connect
 
 ---@class dirsv.SyncTarget
@@ -45,6 +45,21 @@ local function safe_close(handle)
 	end
 end
 
+--- Return the relative path of file under root_dir, or nil if not contained.
+---@param file string absolute path
+---@param root_dir string absolute root directory
+---@return string|nil relative path (forward slashes)
+local function rel_path(file, root_dir)
+	local r = root_dir
+	if r:sub(-1) ~= "/" then
+		r = r .. "/"
+	end
+	if not vim.startswith(file, r) then
+		return nil
+	end
+	return file:sub(#r + 1)
+end
+
 --- Get the relative path of a buffer file under a given root.
 ---@param bufnr integer
 ---@param root string
@@ -54,14 +69,7 @@ local function buf_rel_path(bufnr, root)
 	if name == "" then
 		return nil
 	end
-	local r = root
-	if r:sub(-1) ~= "/" then
-		r = r .. "/"
-	end
-	if not vim.startswith(name, r) then
-		return nil
-	end
-	return name:sub(#r + 1)
+	return rel_path(name, root)
 end
 
 --- Send a payload to a specific address via WebSocket.
@@ -74,7 +82,7 @@ local function ws_send(addr, payload)
 	local conn = st.conns[addr]
 	if not conn then
 		-- Create a new connection entry.
-		conn = { handle = nil, connecting = false, pending = nil, last_connect_fail = nil }
+		conn = { handle = nil, connecting = false, pending = {}, last_connect_fail = nil }
 		st.conns[addr] = conn
 	end
 
@@ -86,14 +94,14 @@ local function ws_send(addr, payload)
 					ws.close(conn.handle)
 					conn.handle = nil
 				end
-				conn.pending = payload
+				table.insert(conn.pending, payload)
 				M._connect(addr)
 			end
 		end)
 		return
 	end
 
-	conn.pending = payload
+	table.insert(conn.pending, payload)
 	if not conn.connecting then
 		M._connect(addr)
 	end
@@ -143,12 +151,14 @@ function M._connect(addr)
 		c.last_connect_fail = nil
 		log.append("CONN", "ws connected " .. addr)
 
-		-- Flush any pending payload. libuv callbacks run on Neovim's main
+		-- Flush pending payloads. libuv callbacks run on Neovim's main
 		-- thread, so accessing st and calling ws.send is safe here.
-		if c.pending then
-			local data = c.pending
-			c.pending = nil
-			ws_send(addr, data)
+		if #c.pending > 0 then
+			local queue = c.pending
+			c.pending = {}
+			for _, data in ipairs(queue) do
+				ws_send(addr, data)
+			end
 		end
 	end)
 end
@@ -333,6 +343,19 @@ function M.stop()
 			conn.handle = nil
 		end
 	end
+end
+
+--- Send a close event to dismiss existing browser tabs for the given path.
+---@param host string
+---@param port integer
+---@param root_dir string server root directory
+---@param file string absolute file path (or empty for root)
+function M.send_close(host, port, root_dir, file)
+	local rel = file ~= "" and rel_path(file, root_dir) or ""
+	local addr = host .. ":" .. port
+	local payload = vim.json.encode({ type = "close", path = rel or "" })
+	log.append("SEND", payload)
+	ws_send(addr, payload)
 end
 
 --- Exposed for testing.
