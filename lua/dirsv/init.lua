@@ -43,6 +43,52 @@ local state = nil
 ---@type table<integer, dirsv.State>
 local buf_servers = {}
 
+--- Check if a path is under the session root.
+---@param path string absolute path
+---@return boolean
+local function is_under_root(path)
+  local r = root
+  if r:sub(-1) ~= "/" then
+    r = r .. "/"
+  end
+  return vim.startswith(path, r)
+end
+
+--- Parse host and port from a base URL like "http://127.0.0.1:8080".
+---@param base_url string
+---@return string host, integer port
+local function parse_host_port(base_url)
+  local host, port = base_url:match("https?://([%w%.%-]+):(%d+)")
+  return host or "127.0.0.1", tonumber(port) or 8080
+end
+
+--- Resolve the sync target for a buffer. Checks buf_servers first (single-file
+--- mode), then falls back to the root server if the buffer is under root.
+---@param bufnr integer
+---@return dirsv.SyncTarget|nil
+local function resolve_sync_target(bufnr)
+  -- Single-file server for this buffer?
+  local buf_srv = buf_servers[bufnr]
+  if buf_srv and buf_srv.base_url ~= "" then
+    local host, port = parse_host_port(buf_srv.base_url)
+    return { host = host, port = port, root = buf_srv.root }
+  end
+  -- Root server running and buffer is under root?
+  if state and state.base_url ~= "" then
+    local name = vim.api.nvim_buf_get_name(bufnr)
+    if name ~= "" and is_under_root(name) then
+      local host, port = parse_host_port(state.base_url)
+      return { host = host, port = port, root = root }
+    end
+  end
+  return nil
+end
+
+--- Ensure sync is started with our resolver. Idempotent.
+local function ensure_sync_started()
+  sync.start(resolve_sync_target)
+end
+
 --- Extract the base URL from dirsv's startup line.
 --- dirsv prints "serving <path> on http://<host>:<port>" to stdout.
 ---@param line string
@@ -99,17 +145,6 @@ local function resolve_target(arg, base)
     return vim.fn.fnamemodify(arg, ":p")
   end
   return vim.api.nvim_buf_get_name(0)
-end
-
---- Check if a path is under the session root.
----@param path string absolute path
----@return boolean
-local function is_under_root(path)
-  local r = root
-  if r:sub(-1) ~= "/" then
-    r = r .. "/"
-  end
-  return vim.startswith(path, r)
 end
 
 --- Spawn a dirsv server.
@@ -211,14 +246,13 @@ local function start_root_mode(target)
       return
     end
     state.base_url = base_url
-    sync.start(base_url, root)
+    ensure_sync_started()
     local url = file_url(captured_target, state)
     open_browser(url)
     vim.notify(LOG_PREFIX .. url, vim.log.levels.INFO)
   end, function()
     -- on_exit: clear global state only if it's still ours.
     if state and state.job_id and srv and state.job_id == srv.job_id then
-      sync.stop()
       state = nil
     end
   end)
@@ -231,8 +265,6 @@ local function start_root_mode(target)
 end
 
 --- Start or reuse a single-file buffer server, then open a URL.
---- Note: sync is not wired here — the sync module is a singleton and
---- single-file servers are per-buffer, so they'd fight over the connection.
 ---@param target string absolute file path
 local function start_single_file_mode(target)
   local bufnr = vim.fn.bufnr(target)
@@ -258,6 +290,7 @@ local function start_single_file_mode(target)
       return
     end
     buf_servers[captured_bufnr].base_url = base_url
+    ensure_sync_started()
     local url = base_url .. "/" .. basename
     open_browser(url)
     vim.notify(LOG_PREFIX .. url, vim.log.levels.INFO)
@@ -321,7 +354,6 @@ function M.stop()
   local had_any = false
 
   if state and state.job_id then
-    sync.stop()
     stop_server(state)
     state = nil
     had_any = true
@@ -331,6 +363,10 @@ function M.stop()
     stop_server(srv)
     buf_servers[bufnr] = nil
     had_any = true
+  end
+
+  if had_any then
+    sync.stop()
   end
 
   log.disable()
