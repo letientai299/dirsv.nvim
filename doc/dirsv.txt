@@ -68,6 +68,53 @@ COMMANDS                                                      *dirsv-commands*
     every buffer-local (single-file) server. Notifies
     "not running" if nothing is active.
 
+                                                                   *:DirsvLog*
+:DirsvLog
+    Open a 12-line bottom split showing realtime communication
+    between Neovim and dirsv. Each line is timestamped:
+>
+      HH:MM:SS.mmm  [TAG]  message
+<
+    Tags: SPAWN, URL, STDERR, EXIT, ERR, CONN, SEND.
+    The buffer auto-scrolls to the latest entry.
+
+==============================================================================
+EDITOR SYNC                                                      *dirsv-sync*
+
+The plugin syncs editor state to the browser via WebSocket at
+~60fps (16ms debounce with leading-edge flush).
+
+Events tracked:
+
+  Cursor ~
+    `CursorMoved` and `CursorMovedI` send the current line,
+    viewport bounds (top/bottom visible lines), and total line
+    count. Also triggered by `CmdlineLeave` after `/` or `?`
+    searches.
+
+  Selection ~
+    Visual mode (v, V, CTRL-V) sends start/end lines instead
+    of a single cursor line. Triggered on `ModeChanged`.
+
+  Scroll ~
+    `WinScrolled` sends updated viewport bounds alongside
+    cursor or selection data.
+
+  Clear ~
+    `BufLeave` sends a clear event so the browser removes
+    highlights for the previous file.
+
+  Close ~
+    Before opening a file URL, the plugin sends a close event
+    to dismiss any existing browser tab for that path. Prevents
+    duplicate tabs from accumulating.
+
+Connection management:
+  - One WebSocket per server (host:port).
+  - Auto-connects on first sync event.
+  - Reconnects with 2-second cooldown after failures.
+  - Pending payloads are buffered and flushed on connect.
+
 ==============================================================================
 LUA API                                                            *dirsv-api*
 
@@ -77,6 +124,9 @@ dirsv.start([{path}])                                          *dirsv.start()*
 
 dirsv.stop()                                                    *dirsv.stop()*
     Stop all servers. Same behavior as |:DirsvStop|.
+
+dirsv.open_log()                                            *dirsv.open_log()*
+    Open the communication log. Same behavior as |:DirsvLog|.
 
 ==============================================================================
 BEHAVIOR                                                      *dirsv-behavior*
@@ -92,5 +142,7 @@ Cleanup ~
     Global server: stopped on |VimLeavePre|.
     Single-file servers: stopped on |BufDelete| for the
     associated buffer, and also on |VimLeavePre|.
+    Sync connections: all WebSocket connections closed and
+    timers stopped on |:DirsvStop| or plugin exit.
 
  vim:tw=78:ts=8:ft=help:norl:
