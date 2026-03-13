@@ -32,8 +32,10 @@ local st = nil
 
 local DEBOUNCE_MS = 16
 local RECONNECT_COOLDOWN_MS = 2000
----@type string|nil last payload+addr fingerprint, for dedup
-local last_sent = nil
+---@type string|nil last addr for dedup
+local last_addr = nil
+---@type string|nil last payload for dedup
+local last_payload = nil
 
 --- Safely close a libuv handle if it's open and not already closing.
 ---@param handle userdata|nil
@@ -126,17 +128,9 @@ function M._connect(addr)
 	log.append("CONN", "ws connecting " .. addr)
 
 	ws.connect(host, port, "/api/editor/ws", function(handle, err)
-		if not st then
-			if handle then
-				ws.close(handle)
-			end
-			return
-		end
-		local c = st.conns[addr]
+		local c = st and st.conns[addr]
 		if not c then
-			if handle then
-				ws.close(handle)
-			end
+			if handle then ws.close(handle) end
 			return
 		end
 		c.connecting = false
@@ -159,55 +153,53 @@ function M._connect(addr)
 	end)
 end
 
---- Build a JSON payload for the current editor state and resolve the target.
----@return string|nil payload, string|nil addr "host:port"
-local function build_payload()
+--- Resolve the current buffer to its sync target address, relative path, and bufnr.
+---@return string|nil addr, string|nil rel, integer|nil bufnr
+local function resolve_current_buf()
 	if not st or not st.resolver then
-		return nil, nil
+		return nil, nil, nil
 	end
 	local bufnr = vim.api.nvim_get_current_buf()
 	local target = st.resolver(bufnr)
 	if not target then
-		return nil, nil
+		return nil, nil, nil
 	end
-
 	local rel = buf_rel_path(bufnr, target.root)
 	if not rel then
+		return nil, nil, nil
+	end
+	return target.host .. ":" .. target.port, rel, bufnr
+end
+
+--- Build a JSON payload for the current editor state and resolve the target.
+---@return string|nil payload, string|nil addr "host:port"
+local function build_payload()
+	local addr, rel, bufnr = resolve_current_buf()
+	if not addr then
 		return nil, nil
 	end
+	local viewport = {
+		path = rel,
+		topLine = vim.fn.line("w0"),
+		bottomLine = vim.fn.line("w$"),
+		total = vim.api.nvim_buf_line_count(bufnr),
+	}
 
-	local addr = target.host .. ":" .. target.port
-	local total = vim.api.nvim_buf_line_count(bufnr)
-	local top_line = vim.fn.line("w0")
 	local mode = vim.fn.mode()
-
-	-- Visual mode: send selection with scroll data. \22 = CTRL-V (visual block).
+	-- Visual mode: send selection. \22 = CTRL-V (visual block).
 	if mode == "v" or mode == "V" or mode == "\22" then
 		local vstart = vim.fn.getpos("v")
 		local vend = vim.fn.getpos(".")
-		local start_line = vstart[2]
-		local end_line = vend[2]
-		local payload = vim.json.encode({
-			type = "selection",
-			path = rel,
-			startLine = math.min(start_line, end_line),
-			endLine = math.max(start_line, end_line),
-			topLine = top_line,
-			total = total,
-		})
-		return payload, addr
+		viewport.type = "selection"
+		viewport.startLine = math.min(vstart[2], vend[2])
+		viewport.endLine = math.max(vstart[2], vend[2])
+		return vim.json.encode(viewport), addr
 	end
 
-	-- Normal/insert mode: send cursor with scroll data.
-	local cursor = vim.api.nvim_win_get_cursor(0)
-	local payload = vim.json.encode({
-		type = "cursor",
-		path = rel,
-		line = cursor[1],
-		topLine = top_line,
-		total = total,
-	})
-	return payload, addr
+	-- Normal/insert mode: send cursor.
+	viewport.type = "cursor"
+	viewport.line = vim.api.nvim_win_get_cursor(0)[1]
+	return vim.json.encode(viewport), addr
 end
 
 --- Flush current editor state to the server. Skips if identical to last send.
@@ -219,13 +211,11 @@ local function flush_payloads()
 	if not payload or not addr then
 		return
 	end
-	-- Include addr in fingerprint so switching buffers between different
-	-- servers always sends, even if the payload happens to be identical.
-	local fingerprint = addr .. "\n" .. payload
-	if fingerprint == last_sent then
+	if addr == last_addr and payload == last_payload then
 		return
 	end
-	last_sent = fingerprint
+	last_addr = addr
+	last_payload = payload
 	log.append("SEND", payload)
 	ws_send(addr, payload)
 end
@@ -248,19 +238,10 @@ end
 
 --- Send a clear event for the current buffer.
 local function send_clear()
-	if not st or not st.resolver then
+	local addr, rel = resolve_current_buf()
+	if not addr then
 		return
 	end
-	local bufnr = vim.api.nvim_get_current_buf()
-	local target = st.resolver(bufnr)
-	if not target then
-		return
-	end
-	local rel = buf_rel_path(bufnr, target.root)
-	if not rel then
-		return
-	end
-	local addr = target.host .. ":" .. target.port
 	local payload = vim.json.encode({ type = "clear", path = rel })
 	log.append("SEND", payload)
 	ws_send(addr, payload)
@@ -309,6 +290,8 @@ function M.start(resolver)
 		pattern = { "/", "?" },
 		callback = schedule_send,
 	})
+	-- WinScrolled fires for any window (including the log buffer).
+	-- Filter to current window to prevent feedback loops.
 	vim.api.nvim_create_autocmd("WinScrolled", {
 		group = group,
 		callback = function()
@@ -332,7 +315,8 @@ function M.stop()
 
 	local s = st
 	st = nil -- prevent callbacks from using stale state
-	last_sent = nil
+	last_addr = nil
+	last_payload = nil
 
 	if s.augroup then
 		vim.api.nvim_del_augroup_by_id(s.augroup)

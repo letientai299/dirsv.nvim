@@ -5,6 +5,8 @@
 local M = {}
 
 local uv = vim.uv or vim.loop
+local ffi = require("ffi")
+
 --- Generate a 16-byte random WebSocket key, base64-encoded.
 ---@return string
 local function gen_ws_key()
@@ -39,6 +41,20 @@ local function upgrade_request(host, port, path, key)
 	)
 end
 
+-- Reusable mask key table — overwritten each frame, avoids 60 allocs/sec.
+local mask = { 0, 0, 0, 0 }
+
+local function refresh_mask()
+	mask[1] = math.random(0, 255)
+	mask[2] = math.random(0, 255)
+	mask[3] = math.random(0, 255)
+	mask[4] = math.random(0, 255)
+end
+
+-- Reusable ffi buffer for XOR masking — avoids per-byte string allocations.
+local mask_buf_cap = 256
+local mask_buf = ffi.new("uint8_t[?]", mask_buf_cap)
+
 --- Frame a text payload as a masked WebSocket text frame (client→server).
 --- Supports payloads up to 65535 bytes.
 ---@param payload string
@@ -53,7 +69,6 @@ function M.frame_text(payload)
 	if len <= 125 then
 		header = header .. string.char(0x80 + len)
 	elseif len <= 65535 then
-		-- 2-byte extended length
 		header = header
 			.. string.char(0x80 + 126)
 			.. string.char(math.floor(len / 256))
@@ -62,34 +77,38 @@ function M.frame_text(payload)
 		error("payload too large for ws.frame_text")
 	end
 
-	-- 4-byte mask key
-	local mask = {
-		math.random(0, 255),
-		math.random(0, 255),
-		math.random(0, 255),
-		math.random(0, 255),
-	}
+	refresh_mask()
 	header = header .. string.char(mask[1], mask[2], mask[3], mask[4])
 
-	-- XOR-mask the payload
-	local masked = {}
-	for i = 1, len do
-		masked[i] = string.char(bit.bxor(string.byte(payload, i), mask[((i - 1) % 4) + 1]))
+	-- Grow buffer if needed (rare — payloads are typically ~200 bytes).
+	if len > mask_buf_cap then
+		mask_buf_cap = len
+		mask_buf = ffi.new("uint8_t[?]", mask_buf_cap)
+	end
+	-- XOR-mask payload into ffi buffer. Unrolled 4x to avoid per-byte
+	-- modulo and table lookups. Locals bypass global/upvalue indirection.
+	local m1, m2, m3, m4 = mask[1], mask[2], mask[3], mask[4]
+	local i = 0
+	local bxor, byte = bit.bxor, string.byte
+	while i + 4 <= len do
+		mask_buf[i] = bxor(byte(payload, i + 1), m1)
+		mask_buf[i + 1] = bxor(byte(payload, i + 2), m2)
+		mask_buf[i + 2] = bxor(byte(payload, i + 3), m3)
+		mask_buf[i + 3] = bxor(byte(payload, i + 4), m4)
+		i = i + 4
+	end
+	while i < len do
+		mask_buf[i] = bxor(byte(payload, i + 1), mask[(i % 4) + 1])
+		i = i + 1
 	end
 
-	return header .. table.concat(masked)
+	return header .. ffi.string(mask_buf, len)
 end
 
 --- Build a close frame (opcode 0x8) with mask.
 ---@return string
 local function close_frame()
-	-- FIN + close opcode, masked, 2-byte status code (1000 = normal closure)
-	local mask = {
-		math.random(0, 255),
-		math.random(0, 255),
-		math.random(0, 255),
-		math.random(0, 255),
-	}
+	refresh_mask()
 	local status_hi = 0x03 -- 1000 >> 8
 	local status_lo = 0xE8 -- 1000 & 0xFF
 	return string.char(0x88) -- FIN + close
@@ -102,7 +121,6 @@ end
 ---@class dirsv.WSHandle
 ---@field tcp uv_tcp_t
 ---@field upgraded boolean
----@field buf string partial data from read_start
 
 --- Connect to a WebSocket endpoint. Calls callback(handle, err).
 --- On success, handle is a dirsv.WSHandle; on failure, handle is nil.
@@ -126,6 +144,9 @@ function M.connect(host, port, path, callback)
 
 		local key = gen_ws_key()
 		local req = upgrade_request(host, port, path, key)
+		-- Guards against double-callback: both the write error handler and
+		-- the read error handler could fire on the same failure. The first
+		-- one to set done=true wins; the other becomes a no-op.
 		local done = false
 
 		-- Start reading before writing — libuv handles ordering.
@@ -169,7 +190,6 @@ function M.connect(host, port, path, callback)
 			local handle = {
 				tcp = tcp,
 				upgraded = true,
-				buf = buf:sub(header_end + 4),
 			}
 
 			-- Switch to a read handler that only detects disconnection.
@@ -219,20 +239,22 @@ end
 --- Close the WebSocket connection gracefully.
 ---@param handle dirsv.WSHandle|nil
 function M.close(handle)
-	if not handle then
+	if not handle or handle.tcp:is_closing() then
 		return
 	end
-	if handle.upgraded and not handle.tcp:is_closing() then
-		-- Send close frame, then shut down.
+	-- Mark as not upgraded first to prevent concurrent sends while
+	-- the close frame is in flight.
+	local was_upgraded = handle.upgraded
+	handle.upgraded = false
+	if was_upgraded then
 		handle.tcp:write(close_frame(), function()
 			if not handle.tcp:is_closing() then
 				handle.tcp:close()
 			end
 		end)
-	elseif not handle.tcp:is_closing() then
+	else
 		handle.tcp:close()
 	end
-	handle.upgraded = false
 end
 
 return M
