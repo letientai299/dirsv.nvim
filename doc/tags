@@ -1,0 +1,12 @@
+:Dirsv	dirsv.txt	/*:Dirsv*
+:DirsvStop	dirsv.txt	/*:DirsvStop*
+dirsv-api	dirsv.txt	/*dirsv-api*
+dirsv-behavior	dirsv.txt	/*dirsv-behavior*
+dirsv-commands	dirsv.txt	/*dirsv-commands*
+dirsv-root	dirsv.txt	/*dirsv-root*
+dirsv-root-mode	dirsv.txt	/*dirsv-root-mode*
+dirsv-single-file	dirsv.txt	/*dirsv-single-file*
+dirsv.nvim	dirsv.txt	/*dirsv.nvim*
+dirsv.start()	dirsv.txt	/*dirsv.start()*
+dirsv.stop()	dirsv.txt	/*dirsv.stop()*
+dirsv.txt	dirsv.txt	/*dirsv.txt*
