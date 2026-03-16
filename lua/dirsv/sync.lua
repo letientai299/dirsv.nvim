@@ -9,6 +9,7 @@ local M = {}
 local uv = vim.uv or vim.loop
 local log = require("dirsv.log")
 local ws = require("dirsv.ws")
+local buf = require("dirsv.buf")
 
 ---@class dirsv.ConnState
 ---@field handle dirsv.WSHandle|nil
@@ -65,7 +66,7 @@ end
 ---@param root string
 ---@return string|nil relative path (forward slashes)
 local function buf_rel_path(bufnr, root)
-	local name = vim.api.nvim_buf_get_name(bufnr)
+	local name = buf.resolve_path(vim.api.nvim_buf_get_name(bufnr))
 	if name == "" then
 		return nil
 	end

@@ -56,6 +56,19 @@ No `setup()` call needed. Commands register globally on load.
 omitted, it uses the current buffer. Calling `:Dirsv` while the server is
 already running opens the target without restarting.
 
+## Plugin buffer support
+
+`:Dirsv` works from buffers owned by other plugins that use custom URI schemes.
+The plugin resolves the real filesystem path automatically:
+
+| Plugin                    | Buffer name                              | Resolved path         |
+| ------------------------- | ---------------------------------------- | --------------------- |
+| [oil.nvim][oil]           | `oil:///home/user/project/`              | `/home/user/project/` |
+| [diffview.nvim][diffview] | `diffview:///repo/.git/:0:/src/main.lua` | `/repo/src/main.lua`  |
+| [copilot.lua][copilot]    | `copilot:///home/user/file.lua`          | `/home/user/file.lua` |
+| [gitsigns.nvim][gitsigns] | `gitsigns:///repo/.git//:0:src/main.lua` | `/repo/src/main.lua`  |
+| [fugitive.vim][fugitive]  | `fugitive:///repo/.git//0/src/main.lua`  | `/repo/src/main.lua`  |
+
 ## Editor sync
 
 The plugin tracks cursor movement, visual selection, and scroll position via
@@ -81,9 +94,9 @@ See `:help dirsv.nvim` for details.
 ## Development
 
 ```sh
-mise install   # install lua 5.1.5
-mise setup     # install nlua + busted
-mise test      # run tests
+mise install # install lua 5.1.5
+mise setup   # install nlua + busted
+mise test    # run tests
 ```
 
 [dirsv]: https://github.com/letientai299/dirsv
@@ -91,3 +104,8 @@ mise test      # run tests
 [plug]: https://github.com/junegunn/vim-plug
 [mp]: https://github.com/iamcco/markdown-preview.nvim
 [lp]: https://github.com/brianhuster/live-preview.nvim
+[oil]: https://github.com/stevearc/oil.nvim
+[diffview]: https://github.com/sindrets/diffview.nvim
+[copilot]: https://github.com/zbirenbaum/copilot.lua
+[gitsigns]: https://github.com/lewis6991/gitsigns.nvim
+[fugitive]: https://github.com/tpope/vim-fugitive

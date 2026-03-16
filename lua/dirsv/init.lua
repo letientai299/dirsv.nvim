@@ -1,6 +1,7 @@
 local M = {}
 local sync = require("dirsv.sync")
 local log = require("dirsv.log")
+local buf = require("dirsv.buf")
 
 ---@class dirsv.State
 ---@field pid integer|nil
@@ -10,6 +11,7 @@ local log = require("dirsv.log")
 ---@field stderr string[]
 
 local LOG_PREFIX = "dirsv: "
+local resolve_buf_path = buf.resolve_path
 
 -- Captured once at module load, before any :cd/:lcd/:tcd.
 local vim_start_dir = vim.fn.getcwd()
@@ -75,7 +77,7 @@ local function resolve_sync_target(bufnr)
   end
   -- Root server running and buffer is under root?
   if state and state.base_url ~= "" then
-    local name = vim.api.nvim_buf_get_name(bufnr)
+    local name = resolve_buf_path(vim.api.nvim_buf_get_name(bufnr))
     if name ~= "" and is_under_root(name) then
       local host, port = parse_host_port(state.base_url)
       return { host = host, port = port, root = root }
@@ -144,7 +146,7 @@ local function resolve_target(arg, base)
     end
     return vim.fn.fnamemodify(arg, ":p")
   end
-  return vim.api.nvim_buf_get_name(0)
+  return resolve_buf_path(vim.api.nvim_buf_get_name(0))
 end
 
 --- Spawn a dirsv server.
@@ -401,6 +403,7 @@ M._test = {
   file_url = file_url,
   resolve_target = resolve_target,
   is_under_root = is_under_root,
+  resolve_buf_path = buf.resolve_path,
   get_state = function() return state end,
   set_state = function(s) state = s end,
   get_root = function() return root end,

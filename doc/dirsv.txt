@@ -62,6 +62,17 @@ COMMANDS                                                      *dirsv-commands*
     Calling |:Dirsv| while a server is already running for
     the target opens the browser without restarting.
 
+    Plugin buffers ~                                  *dirsv-plugin-buffers*
+    When no {path} is given and the current buffer belongs to
+    a plugin that uses a custom URI scheme, the plugin resolves
+    the real filesystem path automatically:
+
+      oil.nvim       `oil:///path/`                → `/path/`
+      diffview.nvim  `diffview://…/.git/:0:/rel`  → `<repo>/rel`
+      copilot.lua    `copilot:///path`             → `/path`
+      gitsigns.nvim  `gitsigns://…/.git//:0:rel`  → `<repo>/rel`
+      fugitive.vim   `fugitive://…/.git//0/rel`   → `<repo>/rel`
+
                                                                   *:DirsvStop*
 :DirsvStop
     Stop all running dirsv servers — global (root mode) and
