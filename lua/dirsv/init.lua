@@ -56,12 +56,12 @@ local function is_under_root(path)
   return vim.startswith(path, r)
 end
 
---- Parse host and port from a base URL like "http://127.0.0.1:8080".
+--- Parse host and port from a base URL like "http://127.0.0.1:3579".
 ---@param base_url string
 ---@return string host, integer port
 local function parse_host_port(base_url)
   local host, port = base_url:match("https?://([%w%.%-]+):(%d+)")
-  return host or "127.0.0.1", tonumber(port) or 8080
+  return host or "127.0.0.1", tonumber(port) or 3579
 end
 
 --- Resolve the sync target for a buffer. Checks buf_servers first (single-file
